@@ -1,0 +1,6 @@
+.idea
+.qmk_api_tasks-3
+__pycache__
+*.egg-info
+*.pyc
+activate-*
