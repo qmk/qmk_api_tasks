@@ -55,6 +55,11 @@ class TaskThread(threading.Thread):
             try:
                 for keyboard in qmk_redis.get('qmk_api_keyboards'):
                     metadata = qmk_redis.get('qmk_api_kb_%s' % (keyboard))
+                    if not metadata['layouts']:
+                        keyboards_tested[keyboard + '/[NO_LAYOUTS]'] = False
+                        failed_keyboards[keyboard + '/[NO_LAYOUTS]'] = {'severity': 'error', 'message': 'QMK Configurator Support Broken:\n\nNo layouts defined.'}
+                        continue
+
                     layout_macro = random.choice(list(metadata['layouts']))  # Pick a LAYOUT macro at random
                     keyboard_layout_name = '/'.join((keyboard,layout_macro))
                     layout = list(map(lambda x:'KC_NO', metadata['layouts'][layout_macro]['layout']))
