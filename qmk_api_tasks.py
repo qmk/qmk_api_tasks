@@ -52,8 +52,8 @@ class TaskThread(threading.Thread):
             failed_keyboards = {}
 
         while True:
-            try:
-                for keyboard in qmk_redis.get('qmk_api_keyboards'):
+            for keyboard in qmk_redis.get('qmk_api_keyboards'):
+                try:
                     metadata = qmk_redis.get('qmk_api_kb_%s' % (keyboard))
                     if not metadata['layouts']:
                         keyboards_tested[keyboard + '/[NO_LAYOUTS]'] = False
@@ -90,11 +90,11 @@ class TaskThread(threading.Thread):
                     qmk_redis.set('qmk_api_keyboards_tested', keyboards_tested)
                     qmk_redis.set('qmk_api_keyboards_failed', failed_keyboards)
 
-            except Exception as e:
-                print('***', strftime('%Y-%m-%d %H:%M:%S'))
-                print('Uncaught exception!', e.__class__.__name__)
-                print(e)
-                print_exc()
+                except Exception as e:
+                    print('***', strftime('%Y-%m-%d %H:%M:%S'))
+                    print('Uncaught exception!', e.__class__.__name__)
+                    print(e)
+                    print_exc()
 
         print('How did we get here this should be impossible! HELP! HELP! HELP!')
         status['current'] = 'bad'
