@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import random
 import threading
 from os import environ
 from time import sleep, strftime
@@ -62,35 +61,35 @@ class TaskThread(threading.Thread):
                         failed_keyboards[keyboard + '/[NO_LAYOUTS]'] = {'severity': 'error', 'message': 'QMK Configurator Support Broken:\n\nNo layouts defined.'}
                         continue
 
-                    layout_macro = random.choice(list(metadata['layouts']))  # Pick a LAYOUT macro at random
-                    keyboard_layout_name = '/'.join((keyboard,layout_macro))
-                    layout = list(map(lambda x:'KC_NO', metadata['layouts'][layout_macro]['layout']))
-                    layers = [layout, list(map(lambda x:'KC_TRNS', layout))]
+                    for layout_macro in list(metadata['layouts']):
+                        keyboard_layout_name = '/'.join((keyboard,layout_macro))
+                        layout = list(map(lambda x:'KC_NO', metadata['layouts'][layout_macro]['layout']))
+                        layers = [layout, list(map(lambda x:'KC_TRNS', layout))]
 
-                    # Enqueue the job
-                    print('***', strftime('%Y-%m-%d %H:%M:%S'))
-                    print('Beginning test compile for %s, layout %s' % (keyboard, layout_macro))
-                    job = compile_firmware.delay(keyboard, 'qmk_api_tasks_test_compile', layout_macro, layers)
-                    print('Successfully enqueued, polling every 2 seconds...')
-                    while not job.result:
-                        sleep(2)
+                        # Enqueue the job
+                        print('***', strftime('%Y-%m-%d %H:%M:%S'))
+                        print('Beginning test compile for %s, layout %s' % (keyboard, layout_macro))
+                        job = compile_firmware.delay(keyboard, 'qmk_api_tasks_test_compile', layout_macro, layers)
+                        print('Successfully enqueued, polling every 2 seconds...')
+                        while not job.result:
+                            sleep(2)
 
-                    # Check over the job results
-                    if job.result['returncode'] == 0:
-                        print('Compile job completed successfully!')
-                        keyboards_tested[keyboard_layout_name] = True
-                        if keyboard_layout_name in failed_keyboards:
-                            del(failed_keyboards[keyboard_layout_name])
-                    else:
-                        print('Could not compile %s, layout %s' % (keyboard, layout_macro))
-                        print(job.result['output'])
-                        keyboards_tested[keyboard_layout_name] = False
-                        failed_keyboards[keyboard_layout_name] = {'severity': 'error', 'message': 'QMK Configurator Support Broken:\n\n%s' % job.result['output']}
+                        # Check over the job results
+                        if job.result['returncode'] == 0:
+                            print('Compile job completed successfully!')
+                            keyboards_tested[keyboard_layout_name] = True
+                            if keyboard_layout_name in failed_keyboards:
+                                del(failed_keyboards[keyboard_layout_name])
+                        else:
+                            print('Could not compile %s, layout %s' % (keyboard, layout_macro))
+                            print(job.result['output'])
+                            keyboards_tested[keyboard_layout_name] = False
+                            failed_keyboards[keyboard_layout_name] = {'severity': 'error', 'message': 'QMK Configurator Support Broken:\n\n%s' % job.result['output']}
 
-                    # Write our current progress to redis
-                    print('\n\n\n\n')
-                    qmk_redis.set('qmk_api_keyboards_tested', keyboards_tested)
-                    qmk_redis.set('qmk_api_keyboards_failed', failed_keyboards)
+                        # Write our current progress to redis
+                        print('\n\n\n\n')
+                        qmk_redis.set('qmk_api_keyboards_tested', keyboards_tested)
+                        qmk_redis.set('qmk_api_keyboards_failed', failed_keyboards)
 
                 except Exception as e:
                     print('***', strftime('%Y-%m-%d %H:%M:%S'))
