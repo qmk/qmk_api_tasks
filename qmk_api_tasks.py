@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 import threading
 from os import environ
-from time import sleep, strftime
+from time import sleep, strftime, time
 from traceback import print_exc
 from wsgiref.simple_server import make_server
 
 environ['S3_ACCESS_KEY'] = environ.get('S3_ACCESS_KEY', 'minio_dev')
 environ['S3_SECRET_KEY'] = environ.get('S3_SECRET_KEY', 'minio_dev_secret')
+COMPILE_TIMEOUT = int(environ.get('COMPILE_TIMEOUT', 300))
 
 import qmk_redis
 from cleanup_storage import cleanup_storage
@@ -71,20 +72,29 @@ class TaskThread(threading.Thread):
                         print('Beginning test compile for %s, layout %s' % (keyboard, layout_macro))
                         job = compile_firmware.delay(keyboard, 'qmk_api_tasks_test_compile', layout_macro, layers)
                         print('Successfully enqueued, polling every 2 seconds...')
+                        timeout = time() + COMPILE_TIMEOUT
                         while not job.result:
+                            if time() > timeout:
+                                print('Compile timeout reached after %s seconds, giving up on this job.' % (COMPILE_TIMEOUT))
+                                break
                             sleep(2)
 
                         # Check over the job results
-                        if job.result['returncode'] == 0:
+                        if job.result and job.result['returncode'] == 0:
                             print('Compile job completed successfully!')
                             keyboards_tested[keyboard_layout_name] = True
                             if keyboard_layout_name in failed_keyboards:
                                 del(failed_keyboards[keyboard_layout_name])
                         else:
                             print('Could not compile %s, layout %s' % (keyboard, layout_macro))
-                            print(job.result['output'])
+                            if not job.result:
+                                output = 'Job took longer than %s seconds, giving up!' % COMPILE_TIMEOUT
+                            else:
+                                output = job.result['output']
+                            print(output)
+
                             keyboards_tested[keyboard_layout_name] = False
-                            failed_keyboards[keyboard_layout_name] = {'severity': 'error', 'message': 'QMK Configurator Support Broken:\n\n%s' % job.result['output']}
+                            failed_keyboards[keyboard_layout_name] = {'severity': 'error', 'message': 'QMK Configurator Support Broken:\n\n%s' % (output)}
 
                         # Write our current progress to redis
                         print('\n\n\n\n')
