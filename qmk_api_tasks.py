@@ -10,6 +10,7 @@ environ['S3_ACCESS_KEY'] = environ.get('S3_ACCESS_KEY', 'minio_dev')
 environ['S3_SECRET_KEY'] = environ.get('S3_SECRET_KEY', 'minio_dev_secret')
 
 import qmk_redis
+from cleanup_storage import cleanup_storage
 from qmk_compiler import compile_firmware
 
 
@@ -52,6 +53,7 @@ class TaskThread(threading.Thread):
             failed_keyboards = {}
 
         while True:
+            # Cycle through each keyboard and build it
             for keyboard in qmk_redis.get('qmk_api_keyboards'):
                 try:
                     metadata = qmk_redis.get('qmk_api_kb_%s' % (keyboard))
@@ -95,6 +97,22 @@ class TaskThread(threading.Thread):
                     print('Uncaught exception!', e.__class__.__name__)
                     print(e)
                     print_exc()
+
+            # Clean up files on S3
+            print('***', strftime('%Y-%m-%d %H:%M:%S'))
+            print('Beginning S3 storage cleanup.')
+            job = cleanup_storage.delay()
+            print('Successfully enqueued, polling every 2 seconds...')
+            while not job.result:
+                sleep(2)
+
+            # Check over the job results
+            if job.result['returncode'] == 0:
+                print('Cleanup job completed successfully!')
+            else:
+                print('Could not clean S3!')
+                print(job)
+                print(job.result)
 
         print('How did we get here this should be impossible! HELP! HELP! HELP!')
         status['current'] = 'bad'
