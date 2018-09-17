@@ -59,7 +59,7 @@ class TaskThread(threading.Thread):
                     metadata = qmk_redis.get('qmk_api_kb_%s' % (keyboard))
                     if not metadata['layouts']:
                         keyboards_tested[keyboard + '/[NO_LAYOUTS]'] = False
-                        failed_keyboards[keyboard + '/[NO_LAYOUTS]'] = {'severity': 'error', 'message': 'QMK Configurator Support Broken:\n\nNo layouts defined.'}
+                        failed_keyboards[keyboard + '/[NO_LAYOUTS]'] = {'severity': 'error', 'message': '%s: QMK Configurator Support Broken:\n\nNo layouts defined.' % keyboard}
                         continue
 
                     for layout_macro in list(metadata['layouts']):
