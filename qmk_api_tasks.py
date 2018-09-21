@@ -3,7 +3,7 @@ import threading
 from os import environ
 from time import sleep, strftime, time
 from traceback import print_exc
-from wsgiref.simple_server import make_server
+from wsgiref.simple_server import make_server, WSGIRequestHandler
 
 environ['S3_ACCESS_KEY'] = environ.get('S3_ACCESS_KEY', 'minio_dev')
 environ['S3_SECRET_KEY'] = environ.get('S3_SECRET_KEY', 'minio_dev_secret')
@@ -25,6 +25,11 @@ status = {
 }
 
 
+class NoLoggingWSGIRequestHandler(WSGIRequestHandler):
+    def log_message(self, format, *args):
+        pass
+
+
 def current_status(i):
     """Return the current status.
     """
@@ -38,7 +43,7 @@ def wsgi_app(environ, start_response):
 
 class WebThread(threading.Thread):
     def run(self):
-        httpd = make_server('', port, wsgi_app)
+        httpd = make_server('', port, wsgi_app, handler_class=NoLoggingWSGIRequestHandler)
         httpd.serve_forever()
 
 
