@@ -7,7 +7,9 @@ from wsgiref.simple_server import make_server
 
 environ['S3_ACCESS_KEY'] = environ.get('S3_ACCESS_KEY', 'minio_dev')
 environ['S3_SECRET_KEY'] = environ.get('S3_SECRET_KEY', 'minio_dev_secret')
-COMPILE_TIMEOUT = int(environ.get('COMPILE_TIMEOUT', 300))
+COMPILE_TIMEOUT = int(environ.get('COMPILE_TIMEOUT', 300))  # 5 minutes
+S3_CLEANUP_TIMEOUT = int(environ.get('S3_CLEANUP_TIMEOUT', 7200))  # 2 Hours
+TIME_FORMAT = environ.get('TIME_FORMAT', '%Y-%m-%d %H:%M:%S')
 
 import qmk_redis
 from cleanup_storage import cleanup_storage
@@ -111,12 +113,15 @@ class TaskThread(threading.Thread):
             print('***', strftime('%Y-%m-%d %H:%M:%S'))
             print('Beginning S3 storage cleanup.')
             job = cleanup_storage.delay()
-            print('Successfully enqueued, polling every 2 seconds...')
+            print('Successfully enqueued job id %s at %s, polling every 2 seconds...' % (job.id, strftime(TIME_FORMAT)))
+            start_time = time()
             while not job.result:
+                if time() - start_time > S3_CLEANUP_TIMEOUT:
+                    print('S3 cleanup took longer than %s seconds! Cancelling at %s!' % (S3_CLEANUP_TIMEOUT, strftime(TIME_FORMAT)))
                 sleep(2)
 
             # Check over the job results
-            if job.result['returncode'] == 0:
+            if job.result and job.result['returncode'] == 0:
                 print('Cleanup job completed successfully!')
             else:
                 print('Could not clean S3!')
