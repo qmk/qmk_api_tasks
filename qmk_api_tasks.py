@@ -7,8 +7,9 @@ from wsgiref.simple_server import make_server, WSGIRequestHandler
 
 environ['S3_ACCESS_KEY'] = environ.get('S3_ACCESS_KEY', 'minio_dev')
 environ['S3_SECRET_KEY'] = environ.get('S3_SECRET_KEY', 'minio_dev_secret')
-COMPILE_TIMEOUT = int(environ.get('COMPILE_TIMEOUT', 300))  # 5 minutes
-S3_CLEANUP_TIMEOUT = int(environ.get('S3_CLEANUP_TIMEOUT', 7200))  # 2 Hours
+COMPILE_TIMEOUT = int(environ.get('COMPILE_TIMEOUT', 300))                # 5 minutes, how long we wait for a specific board to compile
+S3_CLEANUP_TIMEOUT = int(environ.get('S3_CLEANUP_TIMEOUT', 7200))         # 2 Hours, how long we wait for the S3 cleanup process to run
+BUILD_STATUS_TIMEOUT = int(environ.get('BUILD_STATUS_TIMEOUT', 86400*7))  # 1 week, how old configurator_build_status entries should be to get removed
 TIME_FORMAT = environ.get('TIME_FORMAT', '%Y-%m-%d %H:%M:%S')
 
 import qmk_redis
@@ -122,6 +123,14 @@ class TaskThread(threading.Thread):
                     print('Uncaught exception!', e.__class__.__name__)
                     print(e)
                     print_exc()
+
+            # Remove stale build status entries
+            print('***', strftime('%Y-%m-%d %H:%M:%S'))
+            print('Checking configurator_build_status for stale entries.')
+            for keyboard_layout_name in configurator_build_status:
+                if time() - configurator_build_status[keyboard_layout_name]['last_tested'] > BUILD_STATUS_TIMEOUT:
+                    print('Removing stale entry %s because it is %s seconds old' % (keyboard_layout_name, configurator_build_status[keyboard_layout_name]['last_tested']))
+                    del(configurator_build_status[keyboard_layout_name])
 
             # Clean up files on S3
             print('***', strftime('%Y-%m-%d %H:%M:%S'))
