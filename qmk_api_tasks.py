@@ -51,13 +51,18 @@ class WebThread(threading.Thread):
 class TaskThread(threading.Thread):
     def run(self):
         status['current'] = 'good'
-        keyboards_tested = qmk_redis.get('qmk_api_keyboards_tested')
+
+        keyboards_tested = qmk_redis.get('qmk_api_keyboards_tested')  # FIXME: Remove when no longer used
         if not keyboards_tested:
             keyboards_tested = {}
 
-        failed_keyboards = qmk_redis.get('qmk_api_keyboards_failed')
+        failed_keyboards = qmk_redis.get('qmk_api_keyboards_failed')  # FIXME: Remove when no longer used
         if not failed_keyboards:
             failed_keyboards = {}
+
+        configurator_build_status = qmk_redis.get('qmk_api_configurator_status')
+        if not configurator_build_status:
+            configurator_build_status = {}
 
         while True:
             # Cycle through each keyboard and build it
@@ -65,8 +70,9 @@ class TaskThread(threading.Thread):
                 try:
                     metadata = qmk_redis.get('qmk_api_kb_%s' % (keyboard))
                     if not metadata['layouts']:
-                        keyboards_tested[keyboard + '/[NO_LAYOUTS]'] = False
-                        failed_keyboards[keyboard + '/[NO_LAYOUTS]'] = {'severity': 'error', 'message': '%s: QMK Configurator Support Broken:\n\nNo layouts defined.' % keyboard}
+                        keyboards_tested[keyboard + '/[NO_LAYOUTS]'] = False  # FIXME: Remove when no longer used
+                        failed_keyboards[keyboard + '/[NO_LAYOUTS]'] = {'severity': 'error', 'message': '%s: No layouts defined.' % keyboard}  # FIXME: Remove when no longer used
+                        configurator_build_status[keyboard + '/[NO_LAYOUTS]'] = {'works': False, 'last_tested': int(time()), 'message': '%s: No Layouts defined.' % keyboard}
                         continue
 
                     for layout_macro in list(metadata['layouts']):
@@ -89,9 +95,10 @@ class TaskThread(threading.Thread):
                         # Check over the job results
                         if job.result and job.result['returncode'] == 0:
                             print('Compile job completed successfully!')
-                            keyboards_tested[keyboard_layout_name] = True
+                            configurator_build_status[keyboard_layout_name] = {'works': True, 'last_tested': int(time()), 'message': job.result['output']}
+                            keyboards_tested[keyboard_layout_name] = True  # FIXME: Remove this when it's no longer used
                             if keyboard_layout_name in failed_keyboards:
-                                del(failed_keyboards[keyboard_layout_name])
+                                del(failed_keyboards[keyboard_layout_name])  # FIXME: Remove this when it's no longer used
                         else:
                             print('Could not compile %s, layout %s' % (keyboard, layout_macro))
                             if not job.result:
@@ -100,11 +107,13 @@ class TaskThread(threading.Thread):
                                 output = job.result['output']
                             print(output)
 
-                            keyboards_tested[keyboard_layout_name] = False
-                            failed_keyboards[keyboard_layout_name] = {'severity': 'error', 'message': 'QMK Configurator Support Broken:\n\n%s' % (output)}
+                            configurator_build_status[keyboard_layout_name] = {'works': False, 'last_tested': int(time()), 'message': output}
+                            keyboards_tested[keyboard_layout_name] = False  # FIXME: Remove this when it's no longer used
+                            failed_keyboards[keyboard_layout_name] = {'severity': 'error', 'message': output}  # FIXME: Remove this when it's no longer used
 
                         # Write our current progress to redis
                         print('\n\n\n\n')
+                        qmk_redis.set('qmk_api_configurator_status', configurator_build_status)
                         qmk_redis.set('qmk_api_keyboards_tested', keyboards_tested)
                         qmk_redis.set('qmk_api_keyboards_failed', failed_keyboards)
 
