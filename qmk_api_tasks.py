@@ -141,6 +141,7 @@ class TaskThread(threading.Thread):
             while not job.result:
                 if time() - start_time > S3_CLEANUP_TIMEOUT:
                     print('S3 cleanup took longer than %s seconds! Cancelling at %s!' % (S3_CLEANUP_TIMEOUT, strftime(TIME_FORMAT)))
+                    break
                 sleep(2)
 
             # Check over the job results
