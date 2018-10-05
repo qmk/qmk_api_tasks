@@ -101,19 +101,17 @@ class TaskThread(threading.Thread):
                             if keyboard_layout_name in failed_keyboards:
                                 del(failed_keyboards[keyboard_layout_name])  # FIXME: Remove this when it's no longer used
                         else:
-                            print('Could not compile %s, layout %s' % (keyboard, layout_macro))
-                            if not job.result:
-                                output = 'Job took longer than %s seconds, giving up!' % COMPILE_TIMEOUT
-                            else:
+                            if job.result:
                                 output = job.result['output']
-                            print(output)
+                                print('Could not compile %s, layout %s' % (keyboard, layout_macro))
+                            else:
+                                output = 'Job took longer than %s seconds, giving up!' % COMPILE_TIMEOUT
 
                             configurator_build_status[keyboard_layout_name] = {'works': False, 'last_tested': int(time()), 'message': output}
                             keyboards_tested[keyboard_layout_name] = False  # FIXME: Remove this when it's no longer used
                             failed_keyboards[keyboard_layout_name] = {'severity': 'error', 'message': output}  # FIXME: Remove this when it's no longer used
 
                         # Write our current progress to redis
-                        print('\n\n\n\n')
                         qmk_redis.set('qmk_api_configurator_status', configurator_build_status)
                         qmk_redis.set('qmk_api_keyboards_tested', keyboards_tested)
                         qmk_redis.set('qmk_api_keyboards_failed', failed_keyboards)
