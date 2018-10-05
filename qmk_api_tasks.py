@@ -136,6 +136,14 @@ class TaskThread(threading.Thread):
                         break
                     sleep(2)
 
+                # Check over the job results
+                if job.result:
+                    print('Cleanup job completed successfully!')
+                else:
+                    print('Could not clean S3!')
+                    print(job)
+                    print(job.result)
+
             # Remove stale build status entries
             print('***', strftime('%Y-%m-%d %H:%M:%S'))
             print('Checking configurator_build_status for stale entries.')
@@ -143,14 +151,6 @@ class TaskThread(threading.Thread):
                 if time() - configurator_build_status[keyboard_layout_name]['last_tested'] > BUILD_STATUS_TIMEOUT:
                     print('Removing stale entry %s because it is %s seconds old' % (keyboard_layout_name, configurator_build_status[keyboard_layout_name]['last_tested']))
                     del(configurator_build_status[keyboard_layout_name])
-
-            # Check over the job results
-            if job.result and job.result['returncode'] == 0:
-                print('Cleanup job completed successfully!')
-            else:
-                print('Could not clean S3!')
-                print(job)
-                print(job.result)
 
         print('How did we get here this should be impossible! HELP! HELP! HELP!')
         status['current'] = 'bad'
