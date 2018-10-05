@@ -124,6 +124,18 @@ class TaskThread(threading.Thread):
                     print(e)
                     print_exc()
 
+                # Clean up files on S3 after every build
+                print('***', strftime('%Y-%m-%d %H:%M:%S'))
+                print('Beginning S3 storage cleanup.')
+                job = cleanup_storage.delay()
+                print('Successfully enqueued job id %s at %s, polling every 2 seconds...' % (job.id, strftime(TIME_FORMAT)))
+                start_time = time()
+                while not job.result:
+                    if time() - start_time > S3_CLEANUP_TIMEOUT:
+                        print('S3 cleanup took longer than %s seconds! Cancelling at %s!' % (S3_CLEANUP_TIMEOUT, strftime(TIME_FORMAT)))
+                        break
+                    sleep(2)
+
             # Remove stale build status entries
             print('***', strftime('%Y-%m-%d %H:%M:%S'))
             print('Checking configurator_build_status for stale entries.')
@@ -131,18 +143,6 @@ class TaskThread(threading.Thread):
                 if time() - configurator_build_status[keyboard_layout_name]['last_tested'] > BUILD_STATUS_TIMEOUT:
                     print('Removing stale entry %s because it is %s seconds old' % (keyboard_layout_name, configurator_build_status[keyboard_layout_name]['last_tested']))
                     del(configurator_build_status[keyboard_layout_name])
-
-            # Clean up files on S3
-            print('***', strftime('%Y-%m-%d %H:%M:%S'))
-            print('Beginning S3 storage cleanup.')
-            job = cleanup_storage.delay()
-            print('Successfully enqueued job id %s at %s, polling every 2 seconds...' % (job.id, strftime(TIME_FORMAT)))
-            start_time = time()
-            while not job.result:
-                if time() - start_time > S3_CLEANUP_TIMEOUT:
-                    print('S3 cleanup took longer than %s seconds! Cancelling at %s!' % (S3_CLEANUP_TIMEOUT, strftime(TIME_FORMAT)))
-                    break
-                sleep(2)
 
             # Check over the job results
             if job.result and job.result['returncode'] == 0:
