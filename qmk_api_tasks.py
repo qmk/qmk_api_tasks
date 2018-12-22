@@ -5,6 +5,12 @@ from time import sleep, strftime, time
 from traceback import print_exc
 from wsgiref.simple_server import make_server, WSGIRequestHandler
 
+import qmk_redis
+from cleanup_storage import cleanup_storage
+from qmk_commands import discord_msg
+from qmk_compiler import compile_firmware
+from update_kb_redis import update_kb_redis
+
 environ['S3_ACCESS_KEY'] = environ.get('S3_ACCESS_KEY', 'minio_dev')
 environ['S3_SECRET_KEY'] = environ.get('S3_SECRET_KEY', 'minio_dev_secret')
 COMPILE_TIMEOUT = int(environ.get('COMPILE_TIMEOUT', 300))                # 5 minutes, how long we wait for a specific board to compile
@@ -12,11 +18,6 @@ S3_CLEANUP_TIMEOUT = int(environ.get('S3_CLEANUP_TIMEOUT', 7200))         # 2 Ho
 QMK_UPDATE_TIMEOUT = int(environ.get('QMK_UPDATE_TIMEOUT', 7200))         # 2 Hours, how long we wait for the S3 cleanup process to run
 BUILD_STATUS_TIMEOUT = int(environ.get('BUILD_STATUS_TIMEOUT', 86400*7))  # 1 week, how old configurator_build_status entries should be to get removed
 TIME_FORMAT = environ.get('TIME_FORMAT', '%Y-%m-%d %H:%M:%S')
-
-import qmk_redis
-from cleanup_storage import cleanup_storage
-from qmk_compiler import compile_firmware
-from update_kb_redis import update_kb_redis
 
 
 # Simple WSGI app to give Rancher a healthcheck to hit
@@ -92,6 +93,7 @@ class TaskThread(threading.Thread):
                         while not job.result:
                             if time() > timeout:
                                 print('Compile timeout reached after %s seconds, giving up on this job.' % (COMPILE_TIMEOUT))
+                                discord_msg('warning', 'qmk_api_tasks', 'Compile timeout reached.', keyboard=keyboard, layout=layout_macro)
                                 break
                             sleep(2)
 
@@ -102,12 +104,15 @@ class TaskThread(threading.Thread):
                             keyboards_tested[keyboard_layout_name] = True  # FIXME: Remove this when it's no longer used
                             if keyboard_layout_name in failed_keyboards:
                                 del(failed_keyboards[keyboard_layout_name])  # FIXME: Remove this when it's no longer used
+                            discord_msg('info', 'qmk_api_tasks', '%s works in configurator.' % (keyboard_layout_name,))
                         else:
                             if job.result:
                                 output = job.result['output']
                                 print('Could not compile %s, layout %s' % (keyboard, layout_macro))
+                                discord_msg('warning', 'qmk_api_tasks', '%s does not work in configurator.' % (keyboard_layout_name,))
                             else:
                                 output = 'Job took longer than %s seconds, giving up!' % COMPILE_TIMEOUT
+                                discord_msg('warning', 'qmk_api_tasks', '%s timed out during build.' % (keyboard_layout_name,))
 
                             configurator_build_status[keyboard_layout_name] = {'works': False, 'last_tested': int(time()), 'message': output}
                             keyboards_tested[keyboard_layout_name] = False  # FIXME: Remove this when it's no longer used
@@ -122,6 +127,7 @@ class TaskThread(threading.Thread):
                     print('***', strftime('%Y-%m-%d %H:%M:%S'))
                     print('Uncaught exception!', e.__class__.__name__)
                     print(e)
+                    discord_msg('warning', 'qmk_api_tasks', 'Uncaught exception while testing %s.' % (keyboard,), str(e), exception=e.__class__.__name__)
                     print_exc()
 
                 # Clean up files on S3 after every build
@@ -133,16 +139,19 @@ class TaskThread(threading.Thread):
                 while not job.result:
                     if time() - start_time > S3_CLEANUP_TIMEOUT:
                         print('S3 cleanup took longer than %s seconds! Cancelling at %s!' % (S3_CLEANUP_TIMEOUT, strftime(TIME_FORMAT)))
+                        discord_msg('warning', 'qmk_api_tasks', 'S3 cleanup took longer than %s seconds!' % (S3_CLEANUP_TIMEOUT,))
                         break
                     sleep(2)
 
                 # Check over the S3 cleanup results
                 if job.result:
                     print('Cleanup job completed successfully!')
+                    discord_msg('info', 'qmk_api_tasks', 'S3 cleanup completed successfully.')
                 else:
                     print('Could not clean S3!')
                     print(job)
                     print(job.result)
+                    discord_msg('error', 'qmk_api_tasks', 'S3 cleanup did not complete successfully!')
 
                 # Update qmk_firmware if there have been updates
                 if qmk_redis.get('qmk_needs_update'):
@@ -154,16 +163,19 @@ class TaskThread(threading.Thread):
                     while not job.result:
                         if time() - start_time > QMK_UPDATE_TIMEOUT:
                             print('QMK update took longer than %s seconds! Cancelling at %s!' % (QMK_UPDATE_TIMEOUT, strftime(TIME_FORMAT)))
+                            discord_msg('error', 'qmk_api_tasks', 'QMK update took longer than %s seconds!' % (QMK_UPDATE_TIMEOUT,))
                             break
                         sleep(2)
 
                     # Check over the results
                     if job.result:
                         print('QMK update completed successfully!')
+                        discord_msg('info', 'qmk_api_tasks', 'QMK update completed successfully.')
                     else:
                         print('Could not update qmk_firmware!')
                         print(job)
                         print(job.result)
+                        discord_msg('warning', 'qmk_api_tasks', 'QMK update did not complete successfully!')
 
             # Remove stale build status entries
             print('***', strftime('%Y-%m-%d %H:%M:%S'))
@@ -174,6 +186,7 @@ class TaskThread(threading.Thread):
                     del(configurator_build_status[keyboard_layout_name])
 
         print('How did we get here this should be impossible! HELP! HELP! HELP!')
+        discord_msg('error', 'qmk_api_tasks', 'How did we get here this should impossible! @skullydazed HELP! @skullydazed HELP! @skullydazed HELP!')
         status['current'] = 'bad'
 
 
