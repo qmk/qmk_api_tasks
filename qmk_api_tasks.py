@@ -9,12 +9,14 @@ environ['S3_ACCESS_KEY'] = environ.get('S3_ACCESS_KEY', 'minio_dev')
 environ['S3_SECRET_KEY'] = environ.get('S3_SECRET_KEY', 'minio_dev_secret')
 COMPILE_TIMEOUT = int(environ.get('COMPILE_TIMEOUT', 300))                # 5 minutes, how long we wait for a specific board to compile
 S3_CLEANUP_TIMEOUT = int(environ.get('S3_CLEANUP_TIMEOUT', 7200))         # 2 Hours, how long we wait for the S3 cleanup process to run
+QMK_UPDATE_TIMEOUT = int(environ.get('QMK_UPDATE_TIMEOUT', 7200))         # 2 Hours, how long we wait for the S3 cleanup process to run
 BUILD_STATUS_TIMEOUT = int(environ.get('BUILD_STATUS_TIMEOUT', 86400*7))  # 1 week, how old configurator_build_status entries should be to get removed
 TIME_FORMAT = environ.get('TIME_FORMAT', '%Y-%m-%d %H:%M:%S')
 
 import qmk_redis
 from cleanup_storage import cleanup_storage
 from qmk_compiler import compile_firmware
+from update_kb_redis import update_kb_redis
 
 
 # Simple WSGI app to give Rancher a healthcheck to hit
@@ -134,13 +136,34 @@ class TaskThread(threading.Thread):
                         break
                     sleep(2)
 
-                # Check over the job results
+                # Check over the S3 cleanup results
                 if job.result:
                     print('Cleanup job completed successfully!')
                 else:
                     print('Could not clean S3!')
                     print(job)
                     print(job.result)
+
+                # Update qmk_firmware if there have been updates
+                if qmk_redis.get('qmk_needs_update'):
+                    print('***', strftime('%Y-%m-%d %H:%M:%S'))
+                    print('Beginning qmk_firmware update.')
+                    job = update_kb_redis.delay()
+                    print('Successfully enqueued job id %s at %s, polling every 2 seconds...' % (job.id, strftime(TIME_FORMAT)))
+                    start_time = time()
+                    while not job.result:
+                        if time() - start_time > QMK_UPDATE_TIMEOUT:
+                            print('QMK update took longer than %s seconds! Cancelling at %s!' % (QMK_UPDATE_TIMEOUT, strftime(TIME_FORMAT)))
+                            break
+                        sleep(2)
+
+                    # Check over the results
+                    if job.result:
+                        print('QMK update completed successfully!')
+                    else:
+                        print('Could not update qmk_firmware!')
+                        print(job)
+                        print(job.result)
 
             # Remove stale build status entries
             print('***', strftime('%Y-%m-%d %H:%M:%S'))
