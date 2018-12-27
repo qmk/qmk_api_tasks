@@ -1,0 +1,10 @@
+#!/bin/sh
+if [ -d /kle2xy ]; then
+    pip install -e /kle2xy
+fi
+
+if [ -d /qmk_compiler ]; then
+    pip install -e /qmk_compiler
+fi
+
+exec ./qmk_api_tasks.py
