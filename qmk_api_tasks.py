@@ -189,8 +189,10 @@ class TaskThread(threading.Thread):
 
                     # Check over the results
                     if job.result:
-                        print('QMK update completed successfully!')
-                        discord_msg('info', 'QMK update completed successfully.')
+                        hash = qmk_redis.get('qmk_api_last_updated')['git_hash']
+                        message = 'QMK update completed successfully! API is current to ' + hash
+                        print(message)
+                        discord_msg('info', message)
                     else:
                         print('Could not update qmk_firmware!')
                         print(job)
