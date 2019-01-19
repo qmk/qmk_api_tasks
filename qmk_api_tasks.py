@@ -90,9 +90,9 @@ class TaskThread(threading.Thread):
                         # Enqueue the job
                         print('***', strftime('%Y-%m-%d %H:%M:%S'))
                         print('Beginning test compile for %s, layout %s' % (keyboard, layout_macro))
-                        job = compile_firmware.delay(keyboard, 'qmk_api_tasks_test_compile', layout_macro, layers)
+                        job = compile_firmware.delay(keyboard, 'qmk_api_tasks_test_compile', layout_macro, layers, timeout=COMPILE_TIMEOUT)
                         print('Successfully enqueued, polling every 2 seconds...')
-                        timeout = time() + COMPILE_TIMEOUT
+                        timeout = time() + COMPILE_TIMEOUT + 5
                         while not job.result:
                             if time() > timeout:
                                 print('Compile timeout reached after %s seconds, giving up on this job.' % (COMPILE_TIMEOUT))
@@ -153,11 +153,11 @@ class TaskThread(threading.Thread):
                     print('***', strftime('%Y-%m-%d %H:%M:%S'))
                     print('Beginning S3 storage cleanup.')
                     last_s3_cleanup = time()
-                    job = cleanup_storage.delay()
+                    job = cleanup_storage.delay(timeout=S3_CLEANUP_TIMEOUT)
                     print('Successfully enqueued job id %s at %s, polling every 2 seconds...' % (job.id, strftime(TIME_FORMAT)))
                     start_time = time()
                     while not job.result:
-                        if time() - start_time > S3_CLEANUP_TIMEOUT:
+                        if time() - start_time > S3_CLEANUP_TIMEOUT + 5:
                             print('S3 cleanup took longer than %s seconds! Cancelling at %s!' % (S3_CLEANUP_TIMEOUT, strftime(TIME_FORMAT)))
                             discord_msg('warning', 'S3 cleanup took longer than %s seconds!' % (S3_CLEANUP_TIMEOUT,))
                             break
@@ -177,11 +177,11 @@ class TaskThread(threading.Thread):
                 if qmk_redis.get('qmk_needs_update'):
                     print('***', strftime('%Y-%m-%d %H:%M:%S'))
                     print('Beginning qmk_firmware update.')
-                    job = update_kb_redis.delay()
+                    job = update_kb_redis.delay(timeout=QMK_UPDATE_TIMEOUT)
                     print('Successfully enqueued job id %s at %s, polling every 2 seconds...' % (job.id, strftime(TIME_FORMAT)))
                     start_time = time()
                     while not job.result:
-                        if time() - start_time > QMK_UPDATE_TIMEOUT:
+                        if time() - start_time > QMK_UPDATE_TIMEOUT + 5:
                             print('QMK update took longer than %s seconds! Cancelling at %s!' % (QMK_UPDATE_TIMEOUT, strftime(TIME_FORMAT)))
                             discord_msg('error', 'QMK update took longer than %s seconds!' % (QMK_UPDATE_TIMEOUT,))
                             break
