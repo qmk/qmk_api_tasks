@@ -90,7 +90,8 @@ class TaskThread(threading.Thread):
                         # Enqueue the job
                         print('***', strftime('%Y-%m-%d %H:%M:%S'))
                         print('Beginning test compile for %s, layout %s' % (keyboard, layout_macro))
-                        job = compile_firmware.delay(keyboard, 'qmk_api_tasks_test_compile', layout_macro, layers, timeout=COMPILE_TIMEOUT)
+                        args = (keyboard, 'qmk_api_tasks_test_compile', layout_macro, layers)
+                        job = qmk_redis.enqueue(compile_firmware, COMPILE_TIMEOUT, *args)
                         print('Successfully enqueued, polling every 2 seconds...')
                         timeout = time() + COMPILE_TIMEOUT + 5
                         while not job.result:
@@ -153,7 +154,7 @@ class TaskThread(threading.Thread):
                     print('***', strftime('%Y-%m-%d %H:%M:%S'))
                     print('Beginning S3 storage cleanup.')
                     last_s3_cleanup = time()
-                    job = cleanup_storage.delay(timeout=S3_CLEANUP_TIMEOUT)
+                    job = qmk_redis.enqueue(cleanup_storage, timeout=S3_CLEANUP_TIMEOUT)
                     print('Successfully enqueued job id %s at %s, polling every 2 seconds...' % (job.id, strftime(TIME_FORMAT)))
                     start_time = time()
                     while not job.result:
@@ -177,7 +178,7 @@ class TaskThread(threading.Thread):
                 if qmk_redis.get('qmk_needs_update'):
                     print('***', strftime('%Y-%m-%d %H:%M:%S'))
                     print('Beginning qmk_firmware update.')
-                    job = update_kb_redis.delay(timeout=QMK_UPDATE_TIMEOUT)
+                    job = qmk_redis.enqueue(update_kb_redis, timeout=QMK_UPDATE_TIMEOUT)
                     print('Successfully enqueued job id %s at %s, polling every 2 seconds...' % (job.id, strftime(TIME_FORMAT)))
                     start_time = time()
                     while not job.result:
