@@ -14,9 +14,9 @@ from update_kb_redis import update_kb_redis
 environ['S3_ACCESS_KEY'] = environ.get('S3_ACCESS_KEY', 'minio_dev')
 environ['S3_SECRET_KEY'] = environ.get('S3_SECRET_KEY', 'minio_dev_secret')
 COMPILE_TIMEOUT = int(environ.get('COMPILE_TIMEOUT', 300))                # 5 minutes, how long we wait for a specific board to compile
-S3_CLEANUP_TIMEOUT = int(environ.get('S3_CLEANUP_TIMEOUT', 7200))         # 2 Hours, how long we wait for the S3 cleanup process to run
+S3_CLEANUP_TIMEOUT = int(environ.get('S3_CLEANUP_TIMEOUT', 300))          # 5 Minutes, how long we wait for the S3 cleanup process to run
 S3_CLEANUP_PERIOD = int(environ.get('S3_CLEANUP_PERIOD', 900))            # 15 Minutes, how often S3 is cleaned up
-QMK_UPDATE_TIMEOUT = int(environ.get('QMK_UPDATE_TIMEOUT', 7200))         # 2 Hours, how long we wait for the qmk_firmware update to run
+QMK_UPDATE_TIMEOUT = int(environ.get('QMK_UPDATE_TIMEOUT', 600))          # 10 Minutes, how long we wait for the qmk_firmware update to run
 BUILD_STATUS_TIMEOUT = int(environ.get('BUILD_STATUS_TIMEOUT', 86400*7))  # 1 week, how old configurator_build_status entries should be to get removed
 TIME_FORMAT = environ.get('TIME_FORMAT', '%Y-%m-%d %H:%M:%S')
 
@@ -94,7 +94,7 @@ class TaskThread(threading.Thread):
                         job = qmk_redis.enqueue(compile_firmware, COMPILE_TIMEOUT, *args)
                         print('Successfully enqueued, polling every 2 seconds...')
                         timeout = time() + COMPILE_TIMEOUT + 5
-                        while not job.result:
+                        while job.status in ['queued', 'started', 'deferred']:
                             if time() > timeout:
                                 print('Compile timeout reached after %s seconds, giving up on this job.' % (COMPILE_TIMEOUT))
                                 layout_results[keyboard_layout_name] = {'result': False, 'reason': '**%s**: Compile timeout reached.' % layout_macro}
@@ -157,7 +157,7 @@ class TaskThread(threading.Thread):
                     job = qmk_redis.enqueue(cleanup_storage, timeout=S3_CLEANUP_TIMEOUT)
                     print('Successfully enqueued job id %s at %s, polling every 2 seconds...' % (job.id, strftime(TIME_FORMAT)))
                     start_time = time()
-                    while not job.result:
+                    while job.status in ['queued', 'started', 'deferred']:
                         if time() - start_time > S3_CLEANUP_TIMEOUT + 5:
                             print('S3 cleanup took longer than %s seconds! Cancelling at %s!' % (S3_CLEANUP_TIMEOUT, strftime(TIME_FORMAT)))
                             discord_msg('warning', 'S3 cleanup took longer than %s seconds!' % (S3_CLEANUP_TIMEOUT,))
@@ -181,7 +181,7 @@ class TaskThread(threading.Thread):
                     job = qmk_redis.enqueue(update_kb_redis, timeout=QMK_UPDATE_TIMEOUT)
                     print('Successfully enqueued job id %s at %s, polling every 2 seconds...' % (job.id, strftime(TIME_FORMAT)))
                     start_time = time()
-                    while not job.result:
+                    while job.status in ['queued', 'started', 'deferred']:
                         if time() - start_time > QMK_UPDATE_TIMEOUT + 5:
                             print('QMK update took longer than %s seconds! Cancelling at %s!' % (QMK_UPDATE_TIMEOUT, strftime(TIME_FORMAT)))
                             discord_msg('error', 'QMK update took longer than %s seconds!' % (QMK_UPDATE_TIMEOUT,))
@@ -203,7 +203,7 @@ class TaskThread(threading.Thread):
             # Remove stale build status entries
             print('***', strftime('%Y-%m-%d %H:%M:%S'))
             print('Checking configurator_build_status for stale entries.')
-            for keyboard_layout_name in configurator_build_status:
+            for keyboard_layout_name in list(configurator_build_status):
                 if time() - configurator_build_status[keyboard_layout_name]['last_tested'] > BUILD_STATUS_TIMEOUT:
                     print('Removing stale entry %s because it is %s seconds old' % (keyboard_layout_name, configurator_build_status[keyboard_layout_name]['last_tested']))
                     del(configurator_build_status[keyboard_layout_name])
