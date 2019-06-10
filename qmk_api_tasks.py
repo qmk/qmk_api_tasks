@@ -13,20 +13,19 @@ from update_kb_redis import update_kb_redis
 
 environ['S3_ACCESS_KEY'] = environ.get('S3_ACCESS_KEY', 'minio_dev')
 environ['S3_SECRET_KEY'] = environ.get('S3_SECRET_KEY', 'minio_dev_secret')
-COMPILE_TIMEOUT = int(environ.get('COMPILE_TIMEOUT', 300))                # 5 minutes, how long we wait for a specific board to compile
-S3_CLEANUP_TIMEOUT = int(environ.get('S3_CLEANUP_TIMEOUT', 300))          # 5 Minutes, how long we wait for the S3 cleanup process to run
-S3_CLEANUP_PERIOD = int(environ.get('S3_CLEANUP_PERIOD', 900))            # 15 Minutes, how often S3 is cleaned up
-QMK_UPDATE_TIMEOUT = int(environ.get('QMK_UPDATE_TIMEOUT', 600))          # 10 Minutes, how long we wait for the qmk_firmware update to run
-BUILD_STATUS_TIMEOUT = int(environ.get('BUILD_STATUS_TIMEOUT', 86400*7))  # 1 week, how old configurator_build_status entries should be to get removed
+COMPILE_TIMEOUT = int(environ.get('COMPILE_TIMEOUT', 300))  # 5 minutes, how long we wait for a specific board to compile
+S3_CLEANUP_TIMEOUT = int(environ.get('S3_CLEANUP_TIMEOUT', 300))  # 5 Minutes, how long we wait for the S3 cleanup process to run
+S3_CLEANUP_PERIOD = int(environ.get('S3_CLEANUP_PERIOD', 900))  # 15 Minutes, how often S3 is cleaned up
+QMK_UPDATE_TIMEOUT = int(environ.get('QMK_UPDATE_TIMEOUT', 600))  # 10 Minutes, how long we wait for the qmk_firmware update to run
+BUILD_STATUS_TIMEOUT = int(environ.get('BUILD_STATUS_TIMEOUT', 86400 * 7))  # 1 week, how old configurator_build_status entries should be to get removed
 TIME_FORMAT = environ.get('TIME_FORMAT', '%Y-%m-%d %H:%M:%S')
-
 
 # Simple WSGI app to give Rancher a healthcheck to hit
 port = 5000
 status = {
     'good': ['200 OK', '¡Bueno!\n'],
     'bad': ['500 Internal Server Error', '¡Muy mal!\n'],
-    'current': 'bad'
+    'current': 'bad',
 }
 
 
@@ -83,9 +82,9 @@ class TaskThread(threading.Thread):
                         continue
 
                     for layout_macro in list(metadata['layouts']):
-                        keyboard_layout_name = '/'.join((keyboard,layout_macro))
-                        layout = list(map(lambda x:'KC_NO', metadata['layouts'][layout_macro]['layout']))
-                        layers = [layout, list(map(lambda x:'KC_TRNS', layout))]
+                        keyboard_layout_name = '/'.join((keyboard, layout_macro))
+                        layout = list(map(lambda x: 'KC_NO', metadata['layouts'][layout_macro]['layout']))
+                        layers = [layout, list(map(lambda x: 'KC_TRNS', layout))]
 
                         # Enqueue the job
                         print('***', strftime('%Y-%m-%d %H:%M:%S'))
@@ -107,7 +106,7 @@ class TaskThread(threading.Thread):
                             configurator_build_status[keyboard_layout_name] = {'works': True, 'last_tested': int(time()), 'message': job.result['output']}
                             keyboards_tested[keyboard_layout_name] = True  # FIXME: Remove this when it's no longer used
                             if keyboard_layout_name in failed_keyboards:
-                                del(failed_keyboards[keyboard_layout_name])  # FIXME: Remove this when it's no longer used
+                                del failed_keyboards[keyboard_layout_name]  # FIXME: Remove this when it's no longer used
                             layout_results[keyboard_layout_name] = {'result': True, 'reason': layout_macro + ' works in configurator.'}
                         else:
                             if job.result:
@@ -206,12 +205,11 @@ class TaskThread(threading.Thread):
             for keyboard_layout_name in list(configurator_build_status):
                 if time() - configurator_build_status[keyboard_layout_name]['last_tested'] > BUILD_STATUS_TIMEOUT:
                     print('Removing stale entry %s because it is %s seconds old' % (keyboard_layout_name, configurator_build_status[keyboard_layout_name]['last_tested']))
-                    del(configurator_build_status[keyboard_layout_name])
+                    del configurator_build_status[keyboard_layout_name]
 
         print('How did we get here this should be impossible! HELP! HELP! HELP!')
         discord_msg('error', 'How did we get here this should impossible! @skullydazed HELP! @skullydazed HELP! @skullydazed HELP!')
         status['current'] = 'bad'
-
 
 
 if __name__ == '__main__':
