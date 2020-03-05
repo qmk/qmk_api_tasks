@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import threading
+from datetime import datetime
 from os import environ
 from time import sleep, strftime, time
 from traceback import print_exc
@@ -13,12 +14,23 @@ from update_kb_redis import update_kb_redis
 
 environ['S3_ACCESS_KEY'] = environ.get('S3_ACCESS_KEY', 'minio_dev')
 environ['S3_SECRET_KEY'] = environ.get('S3_SECRET_KEY', 'minio_dev_secret')
-COMPILE_TIMEOUT = int(environ.get('COMPILE_TIMEOUT', 300))  # 5 minutes, how long we wait for a specific board to compile
+COMPILE_TIMEOUT = int(environ.get('COMPILE_TIMEOUT', 600))  # 10 minutes, how long we wait for a specific board to compile
+ERROR_LOG_NAG = environ.get('ERROR_LOG_NAG', 'yes') == 'yes'  # When 'yes', send a message to discord about how long the error log is.
+JOB_QUEUE_THRESHOLD = int(environ.get('JOB_QUEUE_THRESHOLD', 1))  # When there are more than this many jobs in the queue we don't compile anything
+JOB_QUEUE_WAIT = int(environ.get('JOB_QUEUE_WAIT', 300))  # 5 Minutes, How long to wait when the job queue is too large
+JOB_QUEUE_TOO_LONG = int(environ.get('JOB_QUEUE_TOO_LONG', 1800))  # 30 Minutes, How long it's been since the last compile before we warn it's been too long
+MSG_ON_GOOD_COMPILE = environ.get('MSG_ON_GOOD_COMPILE', 'yes') == 'yes'  # When 'yes', send a message to discord for good compiles
+MSG_ON_BAD_COMPILE = environ.get('MSG_ON_BAD_COMPILE', 'yes') == 'yes'  # When 'yes', send a message to discord for failed compiles
 S3_CLEANUP_TIMEOUT = int(environ.get('S3_CLEANUP_TIMEOUT', 300))  # 5 Minutes, how long we wait for the S3 cleanup process to run
 S3_CLEANUP_PERIOD = int(environ.get('S3_CLEANUP_PERIOD', 900))  # 15 Minutes, how often S3 is cleaned up
 QMK_UPDATE_TIMEOUT = int(environ.get('QMK_UPDATE_TIMEOUT', 600))  # 10 Minutes, how long we wait for the qmk_firmware update to run
 BUILD_STATUS_TIMEOUT = int(environ.get('BUILD_STATUS_TIMEOUT', 86400 * 7))  # 1 week, how old configurator_build_status entries should be to get removed
-TIME_FORMAT = environ.get('TIME_FORMAT', '%Y-%m-%d %H:%M:%S')
+TIME_FORMAT = environ.get('TIME_FORMAT', '%Y-%m-%d %H:%M:%S %z')
+
+# Status tracking variables
+job_queue_last_compile = datetime.now()
+job_queue_last_warning = time()
+last_s3_cleanup = 0
 
 # Simple WSGI app to give Rancher a healthcheck to hit
 port = 5000
@@ -45,6 +57,71 @@ def wsgi_app(environ, start_response):
     return [current_status(1).encode('UTF-8')]
 
 
+def s3_cleanup():
+    """Clean up old compile jobs on S3.
+    """
+    global last_s3_cleanup
+
+    if time() - last_s3_cleanup > S3_CLEANUP_PERIOD:
+        print('***', strftime('%Y-%m-%d %H:%M:%S'))
+        print('Beginning S3 storage cleanup.')
+        job = qmk_redis.enqueue(cleanup_storage, timeout=S3_CLEANUP_TIMEOUT)
+        print('Successfully enqueued job id %s at %s, polling every 2 seconds...' % (job.id, strftime(TIME_FORMAT)))
+        start_time = time()
+        while job.get_status() in ['queued', 'started', 'deferred']:
+            if time() - start_time > S3_CLEANUP_TIMEOUT + 5:
+                print('S3 cleanup took longer than %s seconds! Cancelling at %s!' % (S3_CLEANUP_TIMEOUT, strftime(TIME_FORMAT)))
+                discord_msg('warning', 'S3 cleanup took longer than %s seconds!' % (S3_CLEANUP_TIMEOUT,))
+                break
+            sleep(2)
+
+        # Check over the S3 cleanup results
+        if job.result:
+            print('Cleanup job completed successfully!')
+            discord_msg('info', 'S3 cleanup completed successfully.')
+        else:
+            print('Could not clean S3!')
+            print(job)
+            print(job.result)
+            discord_msg('error', 'S3 cleanup did not complete successfully!')
+
+        last_s3_cleanup = time()
+
+
+def update_qmk_firmware():
+    """Update the API from qmk_firmware after a push.
+    """
+    if qmk_redis.get('qmk_needs_update'):
+        print('***', strftime('%Y-%m-%d %H:%M:%S'))
+        print('Beginning qmk_firmware update.')
+        job = qmk_redis.enqueue(update_kb_redis, timeout=QMK_UPDATE_TIMEOUT)
+        print('Successfully enqueued job id %s at %s, polling every 2 seconds...' % (job.id, strftime(TIME_FORMAT)))
+        start_time = time()
+        while job.get_status() in ['queued', 'started', 'deferred']:
+            if time() - start_time > QMK_UPDATE_TIMEOUT + 5:
+                print('QMK update took longer than %s seconds! Cancelling at %s!' % (QMK_UPDATE_TIMEOUT, strftime(TIME_FORMAT)))
+                discord_msg('error', 'QMK update took longer than %s seconds!' % (QMK_UPDATE_TIMEOUT,))
+                break
+            sleep(2)
+
+        # Check over the results
+        if job.result:
+            hash = qmk_redis.get('qmk_api_last_updated')['git_hash']
+            message = 'QMK update completed successfully! API is current to ' + hash
+            print(message)
+            discord_msg('info', message)
+
+            if ERROR_LOG_NAG:
+                error_log = qmk_redis.get('qmk_api_update_error_log')
+                if len(error_log) > 5:
+                    discord_msg('error', 'There are %s errors from the update process. View them here: http://api.qmk.fm/v1/keyboards/error_log' % (len(error_log),))
+        else:
+            print('Could not update qmk_firmware!')
+            print(job)
+            print(job.result)
+            discord_msg('warning', 'QMK update did not complete successfully!')
+
+
 class WebThread(threading.Thread):
     def run(self):
         httpd = make_server('', port, wsgi_app, handler_class=NoLoggingWSGIRequestHandler)
@@ -55,7 +132,8 @@ class WebThread(threading.Thread):
 class TaskThread(threading.Thread):
     def run(self):
         status['current'] = 'good'
-        last_s3_cleanup = time()
+        last_compile = 0
+        last_stop = qmk_redis.get('qmk_api_tasks_current_keyboard')
 
         keyboards_tested = qmk_redis.get('qmk_api_keyboards_tested')  # FIXME: Remove when no longer used
         if not keyboards_tested:
@@ -70,9 +148,35 @@ class TaskThread(threading.Thread):
             configurator_build_status = {}
 
         while True:
-            # Cycle through each keyboard and build it
-            for keyboard in qmk_redis.get('qmk_api_keyboards'):
+            keyboard_list = qmk_redis.get('qmk_api_keyboards')
+
+            # If we stopped at a known keyboard restart from there
+            if last_stop in keyboard_list:
+                del(keyboard_list[:keyboard_list.index(last_stop)])
+                last_stop = None
+
+            for keyboard in keyboard_list:
+                global job_queue_last_compile
+                global job_queue_last_warning
+                s3_cleanup()
+                update_qmk_firmware()
+
+                # Cycle through each keyboard and build it
                 try:
+                    # If we have too many jobs in the queue don't put stress on the infrastructure
+                    while len(qmk_redis.rq.jobs) > JOB_QUEUE_THRESHOLD:
+                        print('Too many jobs in the redis queue (%s)! Sleeping %s seconds...' % (len(qmk_redis.rq.jobs), COMPILE_TIMEOUT))
+                        sleep(COMPILE_TIMEOUT)
+                        s3_cleanup()
+                        update_qmk_firmware()
+                        if time() - job_queue_last_warning > JOB_QUEUE_TOO_LONG:
+                            job_queue_last_warning = time()
+                            level = 'warning'
+                            message = 'Compile queue too large (%s) since %s' % (len(qmk_redis.rq.jobs), job_queue_last_compile.isoformat())
+                            discord_msg(level, message)
+
+                    # Cycle through each layout for this keyboard and build it
+                    qmk_redis.set('qmk_api_tasks_current_keyboard', keyboard)
                     layout_results = {}
                     metadata = qmk_redis.get('qmk_api_kb_%s' % (keyboard))
                     if not metadata['layouts']:
@@ -93,7 +197,7 @@ class TaskThread(threading.Thread):
                         job = qmk_redis.enqueue(compile_firmware, COMPILE_TIMEOUT, *args)
                         print('Successfully enqueued, polling every 2 seconds...')
                         timeout = time() + COMPILE_TIMEOUT + 5
-                        while job.status in ['queued', 'started', 'deferred']:
+                        while job.get_status() in ['queued', 'started', 'deferred']:
                             if time() > timeout:
                                 print('Compile timeout reached after %s seconds, giving up on this job.' % (COMPILE_TIMEOUT))
                                 layout_results[keyboard_layout_name] = {'result': False, 'reason': '**%s**: Compile timeout reached.' % layout_macro}
@@ -111,7 +215,8 @@ class TaskThread(threading.Thread):
                         else:
                             if job.result:
                                 output = job.result['output']
-                                print('Could not compile %s, layout %s' % (keyboard, layout_macro))
+                                print('Could not compile %s, layout %s, return code %s' % (keyboard, layout_macro, job.result['returncode']))
+                                print(output)
                                 layout_results[keyboard_layout_name] = {'result': False, 'reason': '**%s** does not work in configurator.' % layout_macro}
                             else:
                                 output = 'Job took longer than %s seconds, giving up!' % COMPILE_TIMEOUT
@@ -133,13 +238,13 @@ class TaskThread(threading.Thread):
                             failed_layout = True
                             break
 
-                    level = 'warning' if failed_layout else 'info'
-                    message = 'Configurator summary for **' + keyboard + ':**'
-                    for layout, result in layout_results.items():
-                        icon = ':green_heart:' if result['result'] else ':broken_heart:'
-                        message += '\n%s %s' % (icon, result['reason'])
-
-                    discord_msg(level, message, False)
+                    if (MSG_ON_GOOD_COMPILE and not failed_layout) or (MSG_ON_BAD_COMPILE and failed_layout):
+                        level = 'warning' if failed_layout else 'info'
+                        message = 'Configurator summary for **' + keyboard + ':**'
+                        for layout, result in layout_results.items():
+                            icon = ':green_heart:' if result['result'] else ':broken_heart:'
+                            message += '\n%s %s' % (icon, result['reason'])
+                        discord_msg(level, message, False)
 
                 except Exception as e:
                     print('***', strftime('%Y-%m-%d %H:%M:%S'))
@@ -148,56 +253,6 @@ class TaskThread(threading.Thread):
                     discord_msg('warning', 'Uncaught exception while testing %s.' % (keyboard,))
                     print_exc()
 
-                # Clean up files on S3 periodically.
-                if time() - last_s3_cleanup > S3_CLEANUP_PERIOD:
-                    print('***', strftime('%Y-%m-%d %H:%M:%S'))
-                    print('Beginning S3 storage cleanup.')
-                    last_s3_cleanup = time()
-                    job = qmk_redis.enqueue(cleanup_storage, timeout=S3_CLEANUP_TIMEOUT)
-                    print('Successfully enqueued job id %s at %s, polling every 2 seconds...' % (job.id, strftime(TIME_FORMAT)))
-                    start_time = time()
-                    while job.status in ['queued', 'started', 'deferred']:
-                        if time() - start_time > S3_CLEANUP_TIMEOUT + 5:
-                            print('S3 cleanup took longer than %s seconds! Cancelling at %s!' % (S3_CLEANUP_TIMEOUT, strftime(TIME_FORMAT)))
-                            discord_msg('warning', 'S3 cleanup took longer than %s seconds!' % (S3_CLEANUP_TIMEOUT,))
-                            break
-                        sleep(2)
-
-                    # Check over the S3 cleanup results
-                    if job.result:
-                        print('Cleanup job completed successfully!')
-                        discord_msg('info', 'S3 cleanup completed successfully.')
-                    else:
-                        print('Could not clean S3!')
-                        print(job)
-                        print(job.result)
-                        discord_msg('error', 'S3 cleanup did not complete successfully!')
-
-                # Update qmk_firmware if there have been updates
-                if qmk_redis.get('qmk_needs_update'):
-                    print('***', strftime('%Y-%m-%d %H:%M:%S'))
-                    print('Beginning qmk_firmware update.')
-                    job = qmk_redis.enqueue(update_kb_redis, timeout=QMK_UPDATE_TIMEOUT)
-                    print('Successfully enqueued job id %s at %s, polling every 2 seconds...' % (job.id, strftime(TIME_FORMAT)))
-                    start_time = time()
-                    while job.status in ['queued', 'started', 'deferred']:
-                        if time() - start_time > QMK_UPDATE_TIMEOUT + 5:
-                            print('QMK update took longer than %s seconds! Cancelling at %s!' % (QMK_UPDATE_TIMEOUT, strftime(TIME_FORMAT)))
-                            discord_msg('error', 'QMK update took longer than %s seconds!' % (QMK_UPDATE_TIMEOUT,))
-                            break
-                        sleep(2)
-
-                    # Check over the results
-                    if job.result:
-                        hash = qmk_redis.get('qmk_api_last_updated')['git_hash']
-                        message = 'QMK update completed successfully! API is current to ' + hash
-                        print(message)
-                        discord_msg('info', message)
-                    else:
-                        print('Could not update qmk_firmware!')
-                        print(job)
-                        print(job.result)
-                        discord_msg('warning', 'QMK update did not complete successfully!')
 
             # Remove stale build status entries
             print('***', strftime('%Y-%m-%d %H:%M:%S'))
