@@ -359,7 +359,7 @@ class TaskThread(threading.Thread):
                         bad_difference = 'No change from'
 
                     last_good_boards = good_boards
-                    last_bad_boards = good_boards
+                    last_bad_boards = bad_boards
                     qmk_redis.set('qmk_last_good_boards', good_boards)
                     qmk_redis.set('qmk_last_bad_boards', bad_boards)
 
