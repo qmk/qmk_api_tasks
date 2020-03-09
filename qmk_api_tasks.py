@@ -16,11 +16,14 @@ environ['S3_ACCESS_KEY'] = environ.get('S3_ACCESS_KEY', 'minio_dev')
 environ['S3_SECRET_KEY'] = environ.get('S3_SECRET_KEY', 'minio_dev_secret')
 COMPILE_TIMEOUT = int(environ.get('COMPILE_TIMEOUT', 600))  # 10 minutes, how long we wait for a specific board to compile
 ERROR_LOG_NAG = environ.get('ERROR_LOG_NAG', 'yes') == 'yes'  # When 'yes', send a message to discord about how long the error log is.
+ERROR_LOG_URL = environ.get('ERROR_LOG_URL', 'http://api.qmk.fm/v1/keyboards/error_log')  # The URL for the error_log
+ERROR_PAGE_URL = environ.get('ERROR_PAGE_URL', 'https://yanfali.github.io/qmk_error_page/')  # The URL to the keyboard status page
 JOB_QUEUE_THRESHOLD = int(environ.get('JOB_QUEUE_THRESHOLD', 1))  # When there are more than this many jobs in the queue we don't compile anything
 JOB_QUEUE_WAIT = int(environ.get('JOB_QUEUE_WAIT', 300))  # 5 Minutes, How long to wait when the job queue is too large
 JOB_QUEUE_TOO_LONG = int(environ.get('JOB_QUEUE_TOO_LONG', 1800))  # 30 Minutes, How long it's been since the last compile before we warn it's been too long
 MSG_ON_GOOD_COMPILE = environ.get('MSG_ON_GOOD_COMPILE', 'yes') == 'yes'  # When 'yes', send a message to discord for good compiles
 MSG_ON_BAD_COMPILE = environ.get('MSG_ON_BAD_COMPILE', 'yes') == 'yes'  # When 'yes', send a message to discord for failed compiles
+MSG_ON_LOOP_COMPLETION = environ.get('MSG_ON_LOOP_COMPLETION', 'yes') == 'yes'  # When 'yes', send a message to discord summarizing how many keyboards work and don't work.
 MSG_ON_S3_SUCCESS = environ.get('MSG_ON_S3_SUCCESS', 'yes') == 'yes'  # When 'yes', send a message to discord for successful S3 cleanup
 MSG_ON_S3_FAIL = environ.get('MSG_ON_S3_FAIL', 'yes') == 'yes'  # When 'yes', send a message to discord for failed S3 cleanup
 MSG_ON_QMK_FAIL = environ.get('MSG_ON_QMK_FAIL', 'yes') == 'yes'  # When 'yes', send a message to discord for failed QMK updates
@@ -162,7 +165,7 @@ def update_qmk_firmware():
             if ERROR_LOG_NAG:
                 error_log = qmk_redis.get('qmk_api_update_error_log')
                 if len(error_log) > 5:
-                    discord_msg('error', 'There are %s errors from the update process. View them here: http://api.qmk.fm/v1/keyboards/error_log' % (len(error_log),))
+                    discord_msg('error', 'There are %s errors from the update process. View them here: %s' % (len(error_log), ERROR_LOG_URL))
         else:
             print('Could not update qmk_firmware!')
             print(job)
@@ -182,6 +185,8 @@ class TaskThread(threading.Thread):
     def run(self):
         status['current'] = 'good'
         last_compile = 0
+        last_good_boards = qmk_redis.get('qmk_last_good_boards')
+        last_bad_boards = qmk_redis.get('qmk_last_bad_boards')
         last_stop = qmk_redis.get('qmk_api_tasks_current_keyboard')
 
         keyboards_tested = qmk_redis.get('qmk_api_keyboards_tested')  # FIXME: Remove when no longer used
@@ -197,10 +202,14 @@ class TaskThread(threading.Thread):
             configurator_build_status = {}
 
         while True:
+            good_boards = 0
+            bad_boards = 0
             keyboard_list = qmk_redis.get('qmk_api_keyboards')
 
             # If we stopped at a known keyboard restart from there
             if last_stop in keyboard_list:
+                good_boards = qmk_redis.get('qmk_good_boards') or 0
+                bad_boards = qmk_redis.get('qmk_bad_boards') or 0
                 del(keyboard_list[:keyboard_list.index(last_stop)])
                 last_stop = None
 
@@ -229,12 +238,18 @@ class TaskThread(threading.Thread):
                     layout_results = {}
                     metadata = qmk_redis.get('qmk_api_kb_%s' % (keyboard))
                     if not metadata['layouts']:
+                        bad_boards += 1
+                        qmk_redis.set('qmk_bad_boards', bad_boards)
                         keyboards_tested[keyboard + '/[NO_LAYOUTS]'] = False  # FIXME: Remove when no longer used
                         failed_keyboards[keyboard + '/[NO_LAYOUTS]'] = {'severity': 'error', 'message': '%s: No layouts defined.' % keyboard}  # FIXME: Remove when no longer used
                         configurator_build_status[keyboard + '/[NO_LAYOUTS]'] = {'works': False, 'last_tested': int(time()), 'message': '%s: No Layouts defined.' % keyboard}
                         continue
 
                     for layout_macro in list(metadata['layouts']):
+                        if 'KEYMAP' in layout_macro:
+                            # Don't bother testing KEYMAP, it's almost always an alias
+                            continue
+
                         keyboard_layout_name = '/'.join((keyboard, layout_macro))
                         layout = list(map(lambda x: 'KC_NO', metadata['layouts'][layout_macro]['layout']))
                         layers = [layout, list(map(lambda x: 'KC_TRNS', layout))]
@@ -264,6 +279,8 @@ class TaskThread(threading.Thread):
                         # Check over the job results
                         if job.result and job.result['returncode'] == 0:
                             print('Compile job completed successfully!')
+                            good_boards += 1
+                            qmk_redis.set('qmk_good_boards', good_boards)
                             configurator_build_status[keyboard_layout_name] = {'works': True, 'last_tested': int(time()), 'message': job.result['output']}
                             keyboards_tested[keyboard_layout_name] = True  # FIXME: Remove this when it's no longer used
                             if keyboard_layout_name in failed_keyboards:
@@ -279,6 +296,8 @@ class TaskThread(threading.Thread):
                                 output = 'Job took longer than %s seconds, giving up!' % COMPILE_TIMEOUT
                                 layout_results[keyboard_layout_name] = {'result': False, 'reason': '**%s**: Compile timeout reached.' % layout_macro}
 
+                            bad_boards += 1
+                            qmk_redis.set('qmk_bad_boards', bad_boards)
                             configurator_build_status[keyboard_layout_name] = {'works': False, 'last_tested': int(time()), 'message': output}
                             keyboards_tested[keyboard_layout_name] = False  # FIXME: Remove this when it's no longer used
                             failed_keyboards[keyboard_layout_name] = {'severity': 'error', 'message': output}  # FIXME: Remove this when it's no longer used
@@ -319,6 +338,45 @@ class TaskThread(threading.Thread):
                     print('Removing stale entry %s because it is %s seconds old' % (keyboard_layout_name, configurator_build_status[keyboard_layout_name]['last_tested']))
                     del configurator_build_status[keyboard_layout_name]
 
+            # Notify discord that we've completed a circuit of the keyboards
+            if MSG_ON_LOOP_COMPLETION:
+                if last_good_boards is not None:
+                    good_difference = good_boards - last_good_boards
+                    bad_difference = bad_boards - last_bad_boards
+
+                    if good_difference < 0:
+                        good_difference = '%s fewer than' % (good_difference * -1,)
+                    elif good_difference > 0:
+                        good_difference = '%s more than' % (good_difference,)
+                    else:
+                        good_difference = 'No change from'
+
+                    if bad_difference < 0:
+                        bad_difference = '%s fewer than' % (bad_difference * -1,)
+                    elif bad_difference > 0:
+                        bad_difference = '%s more than' % (bad_difference,)
+                    else:
+                        bad_difference = 'No change from'
+
+                    last_good_boards = good_boards
+                    last_bad_boards = good_boards
+                    qmk_redis.set('qmk_last_good_boards', good_boards)
+                    qmk_redis.set('qmk_last_bad_boards', bad_boards)
+
+                    message = """We've completed a round of testing!
+
+Working: %s the last round, for a total of %s working keyboard/layout combinations.
+
+Non-working: %s the last round, for a total of %s non-working keyboard/layout combinations.
+
+Check out the details here: <%s>"""
+                    discord_msg('info', message % (good_difference, good_boards, bad_difference, bad_boards, ERROR_PAGE_URL))
+
+                else:
+                    last_good_boards = good_boards
+                    last_bad_boards = bad_boards
+
+        # This comes after our `while True:` above and it should not be possible to break out of that loop.
         print('How did we get here this should be impossible! HELP! HELP! HELP!')
         discord_msg('error', 'How did we get here this should impossible! @skullydazed HELP! @skullydazed HELP! @skullydazed HELP!')
         status['current'] = 'bad'
