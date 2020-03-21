@@ -246,13 +246,17 @@ class TaskThread(threading.Thread):
                         continue
 
                     for layout_macro in list(metadata['layouts']):
+                        # Send a heartbeat for monitoring purposes
+                        qmk_redis.set('qmk_api_tasks_ping', time())
+
+                        # Skip KEYMAP as it's deprecated
                         if 'KEYMAP' in layout_macro:
-                            # Don't bother testing KEYMAP, it's almost always an alias
                             continue
 
+                        # Build a layout
                         keyboard_layout_name = '/'.join((keyboard, layout_macro))
-                        layout = list(map(lambda x: 'KC_NO', metadata['layouts'][layout_macro]['layout']))
-                        layers = [layout, list(map(lambda x: 'KC_TRNS', layout))]
+                        layers = [list(map(lambda x: 'KC_NO', metadata['layouts'][layout_macro]['layout']))]
+                        layers.append(list(map(lambda x: 'KC_TRNS', layers[0])))
 
                         # Enqueue the job
                         print('***', strftime(TIME_FORMAT))
