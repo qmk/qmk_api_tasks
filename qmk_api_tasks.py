@@ -216,6 +216,11 @@ class TaskThread(threading.Thread):
             for keyboard in keyboard_list:
                 global job_queue_last_compile
                 global job_queue_last_warning
+
+                # Send a heartbeat for monitoring purposes
+                qmk_redis.set('qmk_api_tasks_ping', time())
+
+                # Do periodic tasks before we work on this keyboard
                 s3_cleanup()
                 update_qmk_firmware()
 
@@ -246,9 +251,6 @@ class TaskThread(threading.Thread):
                         continue
 
                     for layout_macro in list(metadata['layouts']):
-                        # Send a heartbeat for monitoring purposes
-                        qmk_redis.set('qmk_api_tasks_ping', time())
-
                         # Skip KEYMAP as it's deprecated
                         if 'KEYMAP' in layout_macro:
                             continue
