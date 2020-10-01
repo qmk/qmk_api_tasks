@@ -85,6 +85,14 @@ def wait_for_job_start(job, timeout=QUEUE_TIMEOUT):
     return True
 
 
+def periodic_tasks():
+    """Jobs that need to run on a regular schedule.
+    """
+    qmk_redis.set('qmk_api_tasks_ping', time())
+    s3_cleanup()
+    update_qmk_firmware()
+
+
 def s3_cleanup():
     """Clean up old compile jobs on S3.
     """
@@ -217,21 +225,16 @@ class TaskThread(threading.Thread):
                 global job_queue_last_compile
                 global job_queue_last_warning
 
-                # Send a heartbeat for monitoring purposes
-                qmk_redis.set('qmk_api_tasks_ping', time())
-
-                # Do periodic tasks before we work on this keyboard
-                s3_cleanup()
-                update_qmk_firmware()
+                periodic_tasks()
 
                 # Cycle through each keyboard and build it
                 try:
                     # If we have too many jobs in the queue don't put stress on the infrastructure
                     while len(qmk_redis.rq.jobs) > JOB_QUEUE_THRESHOLD:
+                        periodic_tasks()
                         print('Too many jobs in the redis queue (%s)! Sleeping %s seconds...' % (len(qmk_redis.rq.jobs), COMPILE_TIMEOUT))
                         sleep(COMPILE_TIMEOUT)
-                        s3_cleanup()
-                        update_qmk_firmware()
+
                         if time() - job_queue_last_warning > JOB_QUEUE_TOO_LONG:
                             job_queue_last_warning = time()
                             level = 'warning'
