@@ -282,28 +282,36 @@ class TaskThread(threading.Thread):
 
                     if metadata.get('keymaps') and 'default' in metadata['keymaps']:
                         keymap = fetch_json(metadata['keymaps']['default']['url'])
+                        keymap['keymap'] = 'default'
                     else:
                         keymap_url = f'{KEYMAP_JSON_URL}/{keyboard[0]}/{keyboard.replace("/", "_")}_default.json'
                         keymap = fetch_json(keymap_url)
 
-                        if not keymap:
+                        if keymap:
+                            keymap['keymap'] = 'default_configurator'
+
+                        else:
                             # Fall back to building an empty keymap
-                            if not metadata.get('layouts'):
-                                layout_macro = random.choice(metadata['layouts'])
+                            if metadata.get('layouts'):
+                                layout_macro = random.choice(list(metadata['layouts']))
+                                layout_len = len(metadata['layouts'][layout_macro]['layout'])
                                 keymap = {
                                     'keyboard': keyboard,
-                                    'keymap': 'qmk_api_tasks',
+                                    'keymap': 'generated',
                                     'layout': layout_macro,
                                     'layers': [
-                                        list(map(lambda x: 'KC_NO', metadata['layouts'][layout_macro]['layout'])),
-                                        list(map(lambda x: 'KC_TRNS', metadata['layouts'][layout_macro]['layout']))
+                                        ['KC_NO' for i in range(layout_len)],
+                                        ['KC_TRNS' for i in range(layout_len)]
                                     ]
                                 }
-
-                    if 'layout' not in keymap:
-                        keymap['layout'] = 'Unknown'
-                    if 'keymap' not in keymap:
-                        keymap['keymap'] = 'default'
+                            else:
+                                output = f'No layouts for {keyboard}! Skipping!'
+                                bad_boards += 1
+                                qmk_redis.set('qmk_bad_boards', bad_boards)
+                                configurator_build_status[keyboard] = {'works': False, 'last_tested': int(time()), 'message': output}
+                                keyboards_tested[keyboard] = False  # FIXME: Remove this when it's no longer used
+                                failed_keyboards[keyboard] = {'severity': 'error', 'message': output}  # FIXME: Remove this when it's no longer used
+                                print(output)
 
                     # Enqueue the job
                     print('***', strftime(TIME_FORMAT))
