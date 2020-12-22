@@ -1,5 +1,9 @@
 beautifulsoup4
 boto3
 dhooks
+graphyte
+python-geoip-python3
+python-geoip-geolite2
 pytz
+requests
 rq
