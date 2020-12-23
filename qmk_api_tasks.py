@@ -316,7 +316,7 @@ class TaskThread(threading.Thread):
                     # Enqueue the job
                     print('***', strftime(TIME_FORMAT))
                     print('Beginning test compile for %s, layout %s' % (keyboard, keymap['layout']))
-                    job = qmk_redis.enqueue(compile_json, COMPILE_TIMEOUT, keymap, None, False)
+                    job = qmk_redis.enqueue(compile_json, COMPILE_TIMEOUT, keymap, send_metrics=False, public_firmware=True)
                     print('Successfully enqueued, polling every 2 seconds...')
 
                     # Wait for the job to start running
@@ -345,7 +345,12 @@ class TaskThread(threading.Thread):
                             del failed_keyboards[keyboard]  # FIXME: Remove this when it's no longer used
                         layout_results[keyboard] = {'result': True, 'reason': keyboard + ' works in configurator.'}
                     else:
-                        if job.result:
+                        if job.result['returncode'] == -3:
+                            print(f'Exception while compiling {keyboard}: {job.result["exception"]}')
+                            print(result['stacktrace'])
+                            layout_results[keyboard] = {'result': False, 'reason': f'{job.result["exception"]}: {job.result["stacktrace"]}'}
+
+                        elif job.result:
                             output = job.result['output']
                             print('Could not compile %s, layout %s, return code %s' % (keyboard, keymap['layout'], job.result['returncode']))
                             print(output)
