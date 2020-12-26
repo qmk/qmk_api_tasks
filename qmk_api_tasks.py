@@ -346,8 +346,9 @@ class TaskThread(threading.Thread):
                         layout_results[keyboard] = {'result': True, 'reason': keyboard + ' works in configurator.'}
                     else:
                         if job.result['returncode'] == -3:
-                            print(f'Exception while compiling {keyboard}: {job.result["exception"]}')
-                            print(result['stacktrace'])
+                            output = f'Exception while compiling {keyboard}: {job.result["exception"]}'
+                            print(output)
+                            print(job.result['stacktrace'])
                             layout_results[keyboard] = {'result': False, 'reason': f'{job.result["exception"]}: {job.result["stacktrace"]}'}
 
                         elif job.result:
@@ -357,6 +358,7 @@ class TaskThread(threading.Thread):
                             layout_results[keyboard] = {'result': False, 'reason': '**%s** does not work in configurator.' % keymap['layout']}
                         else:
                             output = 'Job took longer than %s seconds, giving up!' % COMPILE_TIMEOUT
+                            print(output)
                             layout_results[keyboard] = {'result': False, 'reason': '**%s**: Compile timeout reached.' % keymap['layout']}
 
                         bad_boards += 1
