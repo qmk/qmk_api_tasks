@@ -312,6 +312,7 @@ class TaskThread(threading.Thread):
                                 keyboards_tested[keyboard] = False  # FIXME: Remove this when it's no longer used
                                 failed_keyboards[keyboard] = {'severity': 'error', 'message': output}  # FIXME: Remove this when it's no longer used
                                 print(output)
+                                continue
 
                     # Enqueue the job
                     print('***', strftime(TIME_FORMAT))
