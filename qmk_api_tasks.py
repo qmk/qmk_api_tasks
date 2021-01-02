@@ -346,7 +346,7 @@ class TaskThread(threading.Thread):
                             del failed_keyboards[keyboard]  # FIXME: Remove this when it's no longer used
                         layout_results[keyboard] = {'result': True, 'reason': keyboard + ' works in configurator.'}
                     else:
-                        if job.result['returncode'] == -3:
+                        if job.result and job.result['returncode'] == -3:
                             output = f'Exception while compiling {keyboard}: {job.result["exception"]}'
                             print(output)
                             print(job.result['stacktrace'])
