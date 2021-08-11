@@ -239,7 +239,7 @@ class TaskThread(threading.Thread):
             keyboard_list = fetch_json(keyboard_list_url).get('keyboards')
 
             if not keyboard_list:
-                print('Could not fetch keyboard list from %s! Running periodic_tasks() then sleeping %s seconds...' % (KEYBOARD_LIST_URL, COMPILE_TIMEOUT))
+                print('Could not fetch keyboard list from %s! Running periodic_tasks() then sleeping %s seconds...' % (keyboard_list_url, COMPILE_TIMEOUT))
                 periodic_tasks()
                 sleep(COMPILE_TIMEOUT)
                 continue
