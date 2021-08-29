@@ -9,9 +9,9 @@ from wsgiref.simple_server import make_server, WSGIRequestHandler
 
 import requests
 
+import discord
 import qmk_redis
 from cleanup_storage import cleanup_storage
-from qmk_commands import discord_msg
 from qmk_compiler import compile_json
 
 environ['S3_ACCESS_KEY'] = environ.get('S3_ACCESS_KEY', 'minio_dev')
@@ -134,7 +134,7 @@ def s3_cleanup():
         if not wait_for_job_start(job):
             print('S3 cleanup queued for %s seconds! Giving up at %s!' % (QUEUE_TIMEOUT, strftime(TIME_FORMAT)))
             if MSG_ON_S3_FAIL:
-                discord_msg('warning', 'S3 cleanup queue longer than %s seconds! Queue length %s!' % (QUEUE_TIMEOUT, len(qmk_redis.rq.jobs)))
+                discord.message('warning', 'S3 cleanup queue longer than %s seconds! Queue length %s!' % (QUEUE_TIMEOUT, len(qmk_redis.rq.jobs)))
             return False
 
         # Monitor the job while it runs
@@ -142,7 +142,7 @@ def s3_cleanup():
             if time() - start_time > S3_CLEANUP_TIMEOUT + 5:
                 print('S3 cleanup took longer than %s seconds! Cancelling at %s!' % (S3_CLEANUP_TIMEOUT, strftime(TIME_FORMAT)))
                 if MSG_ON_S3_FAIL:
-                    discord_msg('warning', 'S3 cleanup took longer than %s seconds!' % (S3_CLEANUP_TIMEOUT,))
+                    discord.message('warning', 'S3 cleanup took longer than %s seconds!' % (S3_CLEANUP_TIMEOUT,))
                 break
             sleep(2)
 
@@ -150,13 +150,13 @@ def s3_cleanup():
         if job.result:
             print('Cleanup job completed successfully!')
             if MSG_ON_S3_SUCCESS:
-                discord_msg('info', 'S3 cleanup completed successfully.')
+                discord.message('info', 'S3 cleanup completed successfully.')
         else:
             print('Could not clean S3!')
             print(job)
             print(job.result)
             if MSG_ON_S3_FAIL:
-                discord_msg('error', 'S3 cleanup did not complete successfully!')
+                discord.message('error', 'S3 cleanup did not complete successfully!')
 
         last_s3_cleanup = time()
 
@@ -224,7 +224,7 @@ class TaskThread(threading.Thread):
                             job_queue_last_warning = time()
                             level = 'warning'
                             message = 'Compile queue too large (%s) since %s' % (len(qmk_redis.rq.jobs), job_queue_last_compile.isoformat())
-                            discord_msg(level, message)
+                            discord.message(level, message)
 
                     # Find or generate a default keymap for this keyboard.
                     qmk_redis.set('qmk_api_tasks_current_keyboard', keyboard)
@@ -279,7 +279,7 @@ class TaskThread(threading.Thread):
                     if not wait_for_job_start(job):
                         print('Waited %s seconds for %s to start! Giving up at %s!' % (S3_CLEANUP_TIMEOUT, keyboard, strftime(TIME_FORMAT)))
                         if MSG_ON_BAD_COMPILE:
-                            discord_msg('warning', 'Keyboard %s waited in queue longer than %s seconds! Queue length %s!' % (keyboard, S3_CLEANUP_TIMEOUT, len(qmk_redis.rq.jobs)))
+                            discord.message('warning', 'Keyboard %s waited in queue longer than %s seconds! Queue length %s!' % (keyboard, S3_CLEANUP_TIMEOUT, len(qmk_redis.rq.jobs)))
 
                     else:
                         timeout = time() + COMPILE_TIMEOUT + 5
@@ -341,13 +341,13 @@ class TaskThread(threading.Thread):
                         for layout, result in layout_results.items():
                             icon = ':green_heart:' if result['result'] else ':broken_heart:'
                             message += '\n%s %s' % (icon, result['reason'])
-                        discord_msg(level, message, False)
+                        discord.message(level, message, False)
 
                 except Exception as e:
                     print('***', strftime(TIME_FORMAT))
                     print('Uncaught exception!', e.__class__.__name__)
                     print(e)
-                    discord_msg('warning', 'Uncaught exception while testing %s.' % (keyboard,))
+                    discord.message('warning', 'Uncaught exception while testing %s.' % (keyboard,))
                     print_exc()
 
             # Remove stale build status entries
@@ -390,7 +390,7 @@ Working: %s the last round, for a total of %s working keyboards.
 Non-working: %s the last round, for a total of %s non-working keyboards.
 
 Check out the details here: <%s>"""
-                    discord_msg('info', message % (good_difference, good_boards, bad_difference, bad_boards, ERROR_PAGE_URL))
+                    discord.message('info', message % (good_difference, good_boards, bad_difference, bad_boards, ERROR_PAGE_URL))
 
                 else:
                     last_good_boards = good_boards
@@ -398,7 +398,7 @@ Check out the details here: <%s>"""
 
         # This comes after our `while True:` above and it should not be possible to break out of that loop.
         print('How did we get here this should be impossible! HELP! HELP! HELP!')
-        discord_msg('error', 'How did we get here this should impossible! @skullydazed HELP! @skullydazed HELP! @skullydazed HELP!')
+        discord.message('error', 'How did we get here this should impossible! @skullydazed HELP! @skullydazed HELP! @skullydazed HELP!')
         status['current'] = 'bad'
 
 
