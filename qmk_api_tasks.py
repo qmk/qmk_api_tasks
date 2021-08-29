@@ -79,7 +79,7 @@ def current_status(i):
     if datetime.now() - job_queue_last_compile > timedelta(minutes=20):
         return status['bad'][i]
 
-    if datetime.now() - last_s3_cleanup > timedelta(days=1):
+    if time() - last_s3_cleanup > 86400:
         return status['bad'][i]
 
     return status[status['current']][i]
