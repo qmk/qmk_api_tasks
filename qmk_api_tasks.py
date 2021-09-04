@@ -65,8 +65,12 @@ def fetch_json(url):
     if DEBUG:
         print(f'fetch_json({url})')
 
-    response = requests.get(url, timeout=HTTP_TIMEOUT)
-    response.encoding='utf-8-sig'
+    try:
+        response = requests.get(url, timeout=HTTP_TIMEOUT)
+        response.encoding='utf-8-sig'
+    except requests.exceptions.RequestException as e:
+        print(f'*** Error while fetching url {url}! {e.__class__.__name__}: {e}')
+        return {}
 
     if response.status_code == 200:
         return response.json()
@@ -233,7 +237,9 @@ class TaskThread(threading.Thread):
                     metadata = fetch_json(metadata_url).get('keyboards', {}).get(keyboard)
 
                     if not metadata:
-                        print(f'No metadata, skipping {keyboard}.')
+                        print('*** Sleeping for 60 seconds then continuing to the next keyboard...')
+                        sleep(60)
+                        continue
 
                     if metadata.get('keymaps') and 'default' in metadata['keymaps']:
                         keymap = fetch_json(metadata['keymaps']['default']['url'])
