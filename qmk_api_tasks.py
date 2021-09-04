@@ -39,8 +39,10 @@ HTTP_TIMEOUT = int(environ.get('HTTP_TIMEOUT', 5))  # 5 seconds, how long to wai
 TIME_FORMAT = environ.get('TIME_FORMAT', '%Y-%m-%d %H:%M:%S %z')
 
 # Status tracking variables
-job_queue_last_compile = datetime.now()
-job_queue_last_warning = time()
+job_queue_last = {
+    'compile': datetime.now(),
+    'warning': time()
+}
 last_s3_cleanup = 0
 
 # Simple WSGI app to give Rancher a healthcheck to hit
@@ -76,7 +78,7 @@ def fetch_json(url):
 def current_status(i):
     """Return the current status.
     """
-    if datetime.now() - job_queue_last_compile > timedelta(minutes=20):
+    if datetime.now() - job_queue_last['compile'] > timedelta(minutes=20):
         return status['bad'][i]
 
     if time() - last_s3_cleanup > 86400:
@@ -114,6 +116,7 @@ def wait_for_job_start(job, timeout=QUEUE_TIMEOUT):
 def periodic_tasks():
     """Jobs that need to run on a regular schedule.
     """
+    job_queue_last['compile'] = datetime.now()
     qmk_redis.set('qmk_api_tasks_ping', time())
     s3_cleanup()
 
@@ -207,9 +210,6 @@ class TaskThread(threading.Thread):
                 last_stop = None
 
             for keyboard in keyboard_list:
-                global job_queue_last_compile
-                global job_queue_last_warning
-
                 periodic_tasks()
 
                 # Cycle through each keyboard and build it
@@ -220,10 +220,10 @@ class TaskThread(threading.Thread):
                         print('Too many jobs in the redis queue (%s)! Sleeping %s seconds...' % (len(qmk_redis.rq.jobs), COMPILE_TIMEOUT))
                         sleep(COMPILE_TIMEOUT)
 
-                        if time() - job_queue_last_warning > JOB_QUEUE_TOO_LONG:
-                            job_queue_last_warning = time()
+                        if time() - job_queue_last['warning'] > JOB_QUEUE_TOO_LONG:
+                            job_queue_last['warning'] = time()
                             level = 'warning'
-                            message = 'Compile queue too large (%s) since %s' % (len(qmk_redis.rq.jobs), job_queue_last_compile.isoformat())
+                            message = 'Compile queue too large (%s) since %s' % (len(qmk_redis.rq.jobs), job_queue_last['compile'].isoformat())
                             discord.message(level, message)
 
                     # Find or generate a default keymap for this keyboard.
