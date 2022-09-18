@@ -222,13 +222,14 @@ class TaskThread(threading.Thread):
                     while len(qmk_redis.rq.jobs) > JOB_QUEUE_THRESHOLD:
                         periodic_tasks()
                         print('Too many jobs in the redis queue (%s)! Sleeping %s seconds...' % (len(qmk_redis.rq.jobs), COMPILE_TIMEOUT))
-                        sleep(COMPILE_TIMEOUT)
 
                         if time() - job_queue_last['warning'] > JOB_QUEUE_TOO_LONG:
                             job_queue_last['warning'] = time()
                             level = 'warning'
                             message = 'Compile queue too large (%s) since %s' % (len(qmk_redis.rq.jobs), job_queue_last['compile'].isoformat())
                             discord.message(level, message)
+
+                        sleep(COMPILE_TIMEOUT)
 
                     # Find or generate a default keymap for this keyboard.
                     qmk_redis.set('qmk_api_tasks_current_keyboard', keyboard)
