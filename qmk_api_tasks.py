@@ -6,6 +6,7 @@ from os import environ
 from time import sleep, strftime, time
 from traceback import print_exc
 from wsgiref.simple_server import make_server, WSGIRequestHandler
+import hjson
 
 import requests
 
@@ -59,11 +60,11 @@ class NoLoggingWSGIRequestHandler(WSGIRequestHandler):
         pass
 
 
-def fetch_json(url):
+def fetch_json(url, as_hjson=False):
     """Gets the JSON from a url.
     """
     if DEBUG:
-        print(f'fetch_json({url})')
+        print(f'fetch_json({url}, {as_hjson})')
 
     try:
         response = requests.get(url, timeout=HTTP_TIMEOUT)
@@ -73,6 +74,9 @@ def fetch_json(url):
         return {}
 
     if response.status_code == 200:
+        if as_hjson:
+            return hjson.loads(response.text)
+
         return response.json()
 
     print(f'ERROR: {url} returned {response.status_code}: {response.text}')
@@ -243,11 +247,11 @@ class TaskThread(threading.Thread):
                         continue
 
                     if metadata.get('keymaps') and 'default' in metadata['keymaps']:
-                        keymap = fetch_json(metadata['keymaps']['default']['url'])
+                        keymap = fetch_json(metadata['keymaps']['default']['url'], as_hjson=True)
                         keymap['keymap'] = 'default'
                     else:
                         keymap_url = f'{KEYMAP_JSON_URL}/{keyboard[0]}/{keyboard.replace("/", "_")}_default.json'
-                        keymap = fetch_json(keymap_url)
+                        keymap = fetch_json(keymap_url, as_hjson=True)
 
                         if keymap:
                             keymap['keymap'] = 'default_configurator'

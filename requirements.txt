@@ -2,6 +2,7 @@ beautifulsoup4
 boto3
 dhooks
 graphyte
+hjson
 python-geoip-python3
 python-geoip-geolite2
 pytz
