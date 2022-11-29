@@ -17,10 +17,10 @@ from qmk_compiler import compile_json
 environ['S3_ACCESS_KEY'] = environ.get('S3_ACCESS_KEY', 'minio_dev')
 environ['S3_SECRET_KEY'] = environ.get('S3_SECRET_KEY', 'minio_dev_secret')
 DEBUG = int(environ.get('DEBUG', 1))  # Turn on/up debugging
-COMPILE_TIMEOUT = int(environ.get('COMPILE_TIMEOUT', 600))  #qmk_error_page 10 minutes, how long we wait for a specific board to compile
+COMPILE_TIMEOUT = int(environ.get('COMPILE_TIMEOUT', 600))  # 10 minutes, how long we wait for a specific board to compile
 ERROR_LOG_NAG = environ.get('ERROR_LOG_NAG', 'yes') == 'yes'  # When 'yes', send a message to discord about how long the error log is.
 ERROR_LOG_URL = environ.get('ERROR_LOG_URL', 'http://api.qmk.fm/v1/keyboards/error_log')  # The URL for the error_log
-ERROR_PAGE_URL = environ.get('ERROR_PAGE_URL', 'https://qmk.github.io/qmk_error_page/')  # The URL to the keyboard status page
+ERROR_PAGE_URL = environ.get('ERROR_PAGE_URL', 'https://status.qmk.fm/')  # The URL to the keyboard status page
 QMK_JSON_URL = environ.get('QMK_JSON_URL', 'https://keyboards.qmk.fm/v1')  # The URL for the QMK JSON data
 KEYMAP_JSON_URL = environ.get('KEYMAP_JSON_URL', 'https://raw.githubusercontent.com/qmk/qmk_configurator/master/public/keymaps')  # The URL for default keymaps
 JOB_QUEUE_THRESHOLD = int(environ.get('JOB_QUEUE_THRESHOLD', 1))  # When there are more than this many jobs in the queue we don't compile anything
