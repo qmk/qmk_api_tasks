@@ -298,25 +298,26 @@ class TaskThread(threading.Thread):
                             sleep(2)
 
                     # Check over the job results
-                    if job.result and job.result['returncode'] == 0:
+                    result = job.result
+                    if result and result['returncode'] == 0:
                         print('Compile job completed successfully!')
                         good_boards += 1
                         qmk_redis.set('qmk_good_boards', good_boards)
-                        configurator_build_status[keyboard] = {'works': True, 'last_tested': int(time()), 'message': job.result['output']}
+                        configurator_build_status[keyboard] = {'works': True, 'last_tested': int(time()), 'message': result['output']}
                         keyboards_tested[keyboard] = True  # FIXME: Remove this when it's no longer used
                         if keyboard in failed_keyboards:
                             del failed_keyboards[keyboard]  # FIXME: Remove this when it's no longer used
                         layout_results[keyboard] = {'result': True, 'reason': keyboard + ' works in configurator.'}
                     else:
-                        if job.result and job.result['returncode'] == -3:
-                            output = f'Exception while compiling {keyboard}: {job.result["exception"]}'
+                        if result and result['returncode'] == -3:
+                            output = f'Exception while compiling {keyboard}: {result["exception"]}'
                             print(output)
-                            print(job.result['stacktrace'])
-                            layout_results[keyboard] = {'result': False, 'reason': f'{job.result["exception"]}: {job.result["stacktrace"]}'}
+                            print(result['stacktrace'])
+                            layout_results[keyboard] = {'result': False, 'reason': f'{result["exception"]}: {result["stacktrace"]}'}
 
-                        elif job.result:
-                            output = job.result['output']
-                            print('Could not compile %s, layout %s, return code %s' % (keyboard, keymap['layout'], job.result['returncode']))
+                        elif result:
+                            output = result['output']
+                            print('Could not compile %s, layout %s, return code %s' % (keyboard, keymap['layout'], result['returncode']))
                             print(output)
                             layout_results[keyboard] = {'result': False, 'reason': '**%s** does not work in configurator.' % keymap['layout']}
                         else:
