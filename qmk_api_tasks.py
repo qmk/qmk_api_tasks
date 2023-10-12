@@ -303,7 +303,7 @@ class TaskThread(threading.Thread):
                         print('Compile job completed successfully!')
                         good_boards += 1
                         qmk_redis.set('qmk_good_boards', good_boards)
-                        configurator_build_status[keyboard] = {'works': True, 'warnings': '[WARNING]' in result['output'], 'last_tested': int(time()), 'message': result['output']}
+                        configurator_build_status[keyboard] = {'works': True, 'warnings': '[WARNINGS]' in result['output'], 'last_tested': int(time()), 'message': result['output']}
                         keyboards_tested[keyboard] = True  # FIXME: Remove this when it's no longer used
                         if keyboard in failed_keyboards:
                             del failed_keyboards[keyboard]  # FIXME: Remove this when it's no longer used
